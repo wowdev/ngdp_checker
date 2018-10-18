@@ -1,16 +1,18 @@
 import itertools
 import math
 import multiprocessing
-import pycurl
 import threading
+import pycurl
 import tqdm
 import string
+
+from keg import ribbit
 
 regions = ["eu", "us"]
 endpoints = ["cdns", "versions", "bgdl", "blobs", "blob/install", "blob/game"]
 
 cores = multiprocessing.cpu_count()
-workers_per_core = 32
+workers_per_core = 1
 
 valid_programs = []
 error_404 = 0
@@ -25,23 +27,21 @@ def split(iterable, n):
     return ((entry for entry in iterable if entry is not sentinel)
             for iterable in itertools.zip_longest(*[iter(iterable)]*n, fillvalue=sentinel))
 
-def check(url, curl, retry = 5):
-    curl.setopt(curl.URL, url)
-    curl.setopt(curl.NOBODY, True)
+def check(url, retry = 5):
     try: 
-        curl.perform()
-    except Exception as e:
+        print(f"Checking url: {url}")
+        response = ribbit.get(url)
+    except:
         if retry > 0:
-            return check(url, curl, retry - 1)
+            return check(url, retry - 1)
         else:
-            raise e
+            return -1
 
-    return curl.getinfo(pycurl.HTTP_CODE)
+    return 200
 
 
 def worker(items):
     global valid_programs
-    curl = pycurl.Curl()
 
     worker_programs = []
 
@@ -51,37 +51,35 @@ def worker(items):
         (program, url) = item
 
         if program in valid_programs:
-            pbar.update(1)
+            #pbar.update(1)
             continue
 
         try:
-            code = check(url, curl)
+            code = check(url)
             if code == 200:
-                print(f"Found program: {program}")
                 worker_programs.append(program)
             elif code == 404:
                 error_404 += 1
             else:
-                print(f"Error code: {code}")
+                error_other += 1
         except Exception as e:
-            print(e, url)
-            error_other += 1
+            pass
         finally:
-            pbar.update(1)
+            #pbar.update(1)
     
     valid_programs += worker_programs
 
 projects = load("known_projects.txt")
-suffices = load("known_suffices.txt") + list(string.ascii_lowercase) + list(string.digits)
+suffices = load("known_suffices.txt") #+ list(string.ascii_lowercase) + list(string.digits)
 suffices_squared = map(''.join, itertools.product(suffices, repeat=2))
 
-hosts = map(lambda region: f"{region}.patch.battle.net:1119", regions)
+hosts = map(lambda region: f"ribbit://{region}.patch.battle.net", regions)
 guesses = map(''.join, itertools.product(projects, suffices_squared))
-items = list(map(lambda it: (it[1], '/'.join(it)), itertools.product(hosts, guesses, endpoints)))
+items = set(map(lambda it: (it[1], '/'.join(it)), itertools.product(hosts, guesses, endpoints)))
 batch_size = math.ceil(len(items) / (cores * workers_per_core))
-batches = split(set(items), batch_size)
+batches = split(items, batch_size)
 
-pbar = tqdm.tqdm(total=len(items))
+#pbar = tqdm.tqdm(total=len(items))
 
 threads = []
 for batch in batches:
@@ -94,7 +92,7 @@ for batch in batches:
 for thread in threads:
     thread.join()
 
-pbar.close()
+#pbar.close()
 
 print("Found valid urls:", len(valid_programs))
 print("Encountered 404s:", error_404)
@@ -103,4 +101,3 @@ print("Found program codes:")
 
 for program in set(valid_programs):
     print(program)
-
