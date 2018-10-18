@@ -6,9 +6,6 @@ import pycurl
 import tqdm
 import string
 
-regions = ["eu", "us"]
-endpoints = ["cdns"] #, "versions", "bgdl", "blobs", "blob/install", "blob/game"]
-
 cores = multiprocessing.cpu_count()
 workers_per_core = 32
 
@@ -69,6 +66,8 @@ def worker(items):
     
     valid_programs += worker_programs
 
+regions = load("regions.txt")
+endpoints = load("endpoints.txt")
 projects = load("known_projects.txt")
 suffices = load("known_suffices.txt") + list(string.ascii_lowercase) + list(string.digits)
 suffices_squared = map(''.join, itertools.product(suffices, repeat=2))

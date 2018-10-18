@@ -1,0 +1,6 @@
+cdns
+versions
+bgdl
+blobs
+blob/install
+blob/game
