@@ -6,13 +6,11 @@ import pycurl
 import tqdm
 import string
 
-from keg import ribbit
-
 regions = ["eu", "us"]
-endpoints = ["cdns", "versions", "bgdl", "blobs", "blob/install", "blob/game"]
+endpoints = ["cdns"] #, "versions", "bgdl", "blobs", "blob/install", "blob/game"]
 
 cores = multiprocessing.cpu_count()
-workers_per_core = 1
+workers_per_core = 32
 
 valid_programs = []
 error_404 = 0
@@ -27,21 +25,23 @@ def split(iterable, n):
     return ((entry for entry in iterable if entry is not sentinel)
             for iterable in itertools.zip_longest(*[iter(iterable)]*n, fillvalue=sentinel))
 
-def check(url, retry = 5):
+def check(url, curl, retry = 5):
+    curl.setopt(curl.URL, url)
+    curl.setopt(curl.NOBODY, True)
     try: 
-        print(f"Checking url: {url}")
-        response = ribbit.get(url)
+        curl.perform()
     except:
         if retry > 0:
-            return check(url, retry - 1)
+            return check(url, curl, retry - 1)
         else:
             return -1
 
-    return 200
+    return curl.getinfo(pycurl.HTTP_CODE)
 
 
 def worker(items):
     global valid_programs
+    curl = pycurl.Curl()
 
     worker_programs = []
 
@@ -51,11 +51,11 @@ def worker(items):
         (program, url) = item
 
         if program in valid_programs:
-            #pbar.update(1)
+            pbar.update(1)
             continue
 
         try:
-            code = check(url)
+            code = check(url, curl)
             if code == 200:
                 worker_programs.append(program)
             elif code == 404:
@@ -65,21 +65,21 @@ def worker(items):
         except Exception as e:
             pass
         finally:
-            #pbar.update(1)
+            pbar.update(1)
     
     valid_programs += worker_programs
 
 projects = load("known_projects.txt")
-suffices = load("known_suffices.txt") #+ list(string.ascii_lowercase) + list(string.digits)
+suffices = load("known_suffices.txt") + list(string.ascii_lowercase) + list(string.digits)
 suffices_squared = map(''.join, itertools.product(suffices, repeat=2))
 
-hosts = map(lambda region: f"ribbit://{region}.patch.battle.net", regions)
+hosts = map(lambda region: f"{region}.patch.battle.net:1119", regions)
 guesses = map(''.join, itertools.product(projects, suffices_squared))
 items = set(map(lambda it: (it[1], '/'.join(it)), itertools.product(hosts, guesses, endpoints)))
 batch_size = math.ceil(len(items) / (cores * workers_per_core))
 batches = split(items, batch_size)
 
-#pbar = tqdm.tqdm(total=len(items))
+pbar = tqdm.tqdm(total=len(items))
 
 threads = []
 for batch in batches:
@@ -92,7 +92,7 @@ for batch in batches:
 for thread in threads:
     thread.join()
 
-#pbar.close()
+pbar.close()
 
 print("Found valid urls:", len(valid_programs))
 print("Encountered 404s:", error_404)
